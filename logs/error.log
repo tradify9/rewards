@@ -1,0 +1,3 @@
+# Error Log File
+# This file logs all application errors and exceptions
+# Format: [timestamp] - [level] - [message]

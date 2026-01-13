@@ -1,0 +1,3 @@
+# Payout Log File
+# This file logs all payout transactions and their responses
+# Format: [timestamp] - [level] - [message]
