@@ -13,7 +13,7 @@ const rewardLogSchema = new mongoose.Schema({
   reason: {
     type: String,
     required: true,
-    enum: ['login', 'referral', 'bonus', 'redemption']
+    enum: ['login', 'referral', 'bonus', 'redemption', 'transfer']
   },
   tierAtTime: {
     type: String,

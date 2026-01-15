@@ -23,7 +23,35 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  address: {
+    type: String,
+    trim: true
+  },
+  dob: {
+    type: Date
+  },
+  gender: {
+    type: String,
+    enum: ['Male', 'Female', 'Other']
+  },
+  aadhaarUrl: {
+    type: String
+  },
+  pancardUrl: {
+    type: String
+  },
+  photoUrl: {
+    type: String
+  },
+  uniqueId: {
+    type: String,
+    unique: true
+  },
   totalCoins: {
+    type: Number,
+    default: 0
+  },
+  totalGold: {
     type: Number,
     default: 0
   },
@@ -38,6 +66,15 @@ const userSchema = new mongoose.Schema({
     ifsc: String,
     bankName: String,
     upiId: String
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'completed'],
+    default: 'pending'
+  },
+  serviceActivated: {
+    type: Boolean,
+    default: false
   },
   isAdmin: {
     type: Boolean,
@@ -55,13 +92,35 @@ const userSchema = new mongoose.Schema({
     default: 0
   },
   resetPasswordToken: String,
-  resetPasswordExpires: Date
+  resetPasswordExpires: Date,
+  referralCode: {
+    type: String,
+    unique: true
+  },
+  referredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  referrals: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }]
 }, {
   timestamps: true
 });
 
-// Hash password before saving
+// Generate uniqueId before saving
 userSchema.pre('save', async function(next) {
+  if (!this.uniqueId) {
+    let uniqueId;
+    let exists = true;
+    while (exists) {
+      uniqueId = 'USR' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      exists = await mongoose.models.User.findOne({ uniqueId });
+    }
+    this.uniqueId = uniqueId;
+  }
+
   if (!this.isModified('password')) return next();
 
   const salt = await bcrypt.genSalt(10);

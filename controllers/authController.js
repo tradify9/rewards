@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const cloudinary = require('../config/cloudinary');
+const razorpay = require('../config/razorpay');
 const User = require('../models/User');
 const RewardLog = require('../models/RewardLog');
 const { calculateReward, updateUserTier } = require('../utils/rewardAlgorithm');
@@ -15,13 +17,20 @@ const generateToken = (id) => {
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
+const { processReferral, completeReferral } = require('../controllers/referralController');
+
 const register = async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body;
+    const { name, email, phone, password, address, dob, gender, referralCode } = req.body;
+    const files = req.files;
 
     // Validate input
-    if (!name || !email || !phone || !password) {
-      return res.status(400).json({ message: 'All fields are required' });
+    if (!name || !email || !phone || !password || !address) {
+      return res.status(400).json({ message: 'All text fields are required' });
+    }
+
+    if (!files || !files.aadhaar || !files.aadhaar[0] || !files.pancard || !files.pancard[0] || !files.photo || !files.photo[0]) {
+      return res.status(400).json({ message: 'All document files are required' });
     }
 
     // Check if user exists
@@ -30,13 +39,44 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
+    // Upload files to Cloudinary
+    const uploadToCloudinary = (file, folder) => {
+      return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder, resource_type: 'auto' },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result.secure_url);
+          }
+        );
+        stream.end(file.buffer);
+      });
+    };
+
+    const [aadhaarUrl, pancardUrl, photoUrl] = await Promise.all([
+      uploadToCloudinary(files.aadhaar[0], 'user-docs/aadhaar'),
+      uploadToCloudinary(files.pancard[0], 'user-docs/pancard'),
+      uploadToCloudinary(files.photo[0], 'user-docs/photo')
+    ]);
+
     // Create user
     const user = await User.create({
       name: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
-      password
+      password,
+      address: address.trim(),
+      dob: new Date(dob),
+      gender,
+      aadhaarUrl,
+      pancardUrl,
+      photoUrl
     });
+
+    // Process referral if code provided
+    if (referralCode) {
+      await processReferral(referralCode, user._id);
+    }
 
     // Send welcome email
     await sendWelcomeEmail(user);
@@ -46,8 +86,11 @@ const register = async (req, res) => {
       name: user.name,
       email: user.email,
       phone: user.phone,
+      uniqueId: user.uniqueId,
       totalCoins: user.totalCoins,
       tier: user.tier,
+      paymentRequired: true,
+      amount: 100,
       token: generateToken(user._id)
     });
   } catch (error) {
@@ -87,6 +130,9 @@ const login = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    // Check if service is activated - allow login but redirect to payment
+    const needsPayment = !user.serviceActivated;
 
     let rewardAmount = 0;
     try {
@@ -209,10 +255,80 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// @desc    Create payment order
+// @route   POST /api/auth/create-payment-order
+// @access  Private
+const createPaymentOrder = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.paymentStatus === 'completed') {
+      return res.status(400).json({ message: 'Payment already completed' });
+    }
+
+    const options = {
+      amount: 100 * 100, // 100 INR in paise
+      currency: 'INR',
+      receipt: `receipt_${user._id}`,
+      payment_capture: 1
+    };
+
+    const order = await razorpay.orders.create(options);
+
+    res.json({
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Verify payment
+// @route   POST /api/auth/verify-payment
+// @access  Private
+const verifyPayment = async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Verify signature
+    const sign = razorpay_order_id + '|' + razorpay_payment_id;
+    const expectedSign = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(sign.toString())
+      .digest('hex');
+
+    if (razorpay_signature === expectedSign) {
+      user.paymentStatus = 'completed';
+      user.serviceActivated = true;
+      await user.save();
+
+      // Complete referral if user was referred
+      await completeReferral(user._id);
+
+      res.json({ message: 'Payment verified successfully' });
+    } else {
+      res.status(400).json({ message: 'Payment verification failed' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   register,
   login,
   getProfile,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  createPaymentOrder,
+  verifyPayment
 };

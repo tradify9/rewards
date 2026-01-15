@@ -50,6 +50,8 @@ app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/user-details", require("./routes/userDetailsRoutes"));
 app.use("/api/transactions", require("./routes/transactionRoutes"));
 app.use("/api/settings", require("./routes/settingsRoutes"));
+app.use("/api/referrals", require("./routes/referralRoutes"));
+app.use("/api/reports", require("./routes/reportRoutes"));
 
 /* -------------------------------
    Health Check

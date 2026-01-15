@@ -1,9 +1,9 @@
 const RewardLog = require('../models/RewardLog');
 
-// Reward algorithm - Paytm style random login rewards
+// Reward algorithm - random login rewards up to 10
 const calculateReward = async (user) => {
-  // Give random 1-4 coins on login (like Paytm)
-  const randomReward = Math.floor(Math.random() * 4) + 1; // 1, 2, 3, or 4
+  // Give random 1-10 coins on login
+  const randomReward = Math.floor(Math.random() * 10) + 1; // 1 to 10
 
   return randomReward;
 };

@@ -89,9 +89,63 @@ const getDashboard = async (req, res) => {
   }
 };
 
+// @desc    Transfer coins to another user
+// @route   POST /api/users/transfer-coins
+// @access  Private
+const transferCoins = async (req, res) => {
+  try {
+    const { recipientId, amount } = req.body;
+
+    if (!recipientId || !amount || amount <= 0) {
+      return res.status(400).json({ message: 'Invalid recipient or amount' });
+    }
+
+    const sender = await User.findById(req.user._id);
+    const recipient = await User.findOne({ uniqueId: recipientId });
+
+    if (!recipient) {
+      return res.status(404).json({ message: 'Recipient not found' });
+    }
+
+    if (sender._id.equals(recipient._id)) {
+      return res.status(400).json({ message: 'Cannot transfer to yourself' });
+    }
+
+    if (sender.totalCoins < amount) {
+      return res.status(400).json({ message: 'Insufficient coins' });
+    }
+
+    sender.totalCoins -= amount;
+    recipient.totalCoins += amount;
+
+    await sender.save();
+    await recipient.save();
+
+    // Log the transfer
+    await RewardLog.create({
+      user: sender._id,
+      coinsEarned: -amount,
+      reason: 'transfer',
+      tierAtTime: sender.tier
+    });
+
+    await RewardLog.create({
+      user: recipient._id,
+      coinsEarned: amount,
+      reason: 'transfer',
+      tierAtTime: recipient.tier
+    });
+
+    res.json({ message: 'Coins transferred successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getLeaderboard,
   updateBankDetails,
   getRewardHistory,
-  getDashboard
+  getDashboard,
+  transferCoins
 };
