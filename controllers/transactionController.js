@@ -1,46 +1,83 @@
 const Transaction = require('../models/Transaction');
 
+// ===============================================
 // @desc    Get all transactions
 // @route   GET /api/transactions
 // @access  Private/Admin
+// ===============================================
 const getTransactions = async (req, res) => {
   try {
     const transactions = await Transaction.find({})
-      .populate('withdrawal', 'user amount status')
+      .populate('user', 'name email uniqueId')
+      .populate({
+        path: 'withdrawal',
+        select: 'amount status user',
+        populate: {
+          path: 'user',
+          select: 'name email uniqueId'
+        }
+      })
       .sort({ createdAt: -1 });
-    res.json(transactions);
+
+    return res.status(200).json(transactions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error fetching transactions:', error);
+    return res.status(500).json({ message: error.message });
   }
 };
 
+// ===============================================
 // @desc    Get transaction by ID
 // @route   GET /api/transactions/:id
 // @access  Private/Admin
+// ===============================================
 const getTransactionById = async (req, res) => {
   try {
     const transaction = await Transaction.findById(req.params.id)
-      .populate('withdrawal', 'user amount status');
+      .populate({
+        path: 'withdrawal',
+        select: 'amount status user',
+        populate: {
+          path: 'user',
+          select: 'name email uniqueId'
+        }
+      });
+
     if (!transaction) {
       return res.status(404).json({ message: 'Transaction not found' });
     }
-    res.json(transaction);
+
+    return res.status(200).json(transaction);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error fetching transaction:', error);
+    return res.status(500).json({ message: error.message });
   }
 };
 
+// ===============================================
 // @desc    Get transactions by status
 // @route   GET /api/transactions/status/:status
 // @access  Private/Admin
+// ===============================================
 const getTransactionsByStatus = async (req, res) => {
   try {
-    const transactions = await Transaction.find({ status: req.params.status })
-      .populate('withdrawal', 'user amount status')
+    const { status } = req.params;
+
+    const transactions = await Transaction.find({ status })
+      .populate({
+        path: 'withdrawal',
+        select: 'amount status user',
+        populate: {
+          path: 'user',
+          select: 'name email uniqueId'
+        }
+      })
       .sort({ createdAt: -1 });
-    res.json(transactions);
+
+    return res.status(200).json(transactions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error filtering transactions:', error);
+    return res.status(500).json({ message: error.message });
   }
 };
 

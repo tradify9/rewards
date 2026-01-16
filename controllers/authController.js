@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const cloudinary = require('../config/cloudinary');
 const razorpay = require('../config/razorpay');
 const User = require('../models/User');
+const UserDetails = require('../models/UserDetails');
 const RewardLog = require('../models/RewardLog');
 const { calculateReward, updateUserTier } = require('../utils/rewardAlgorithm');
 const { sendWelcomeEmail, sendResetEmail } = require('../utils/sendMail');
@@ -21,16 +22,12 @@ const { processReferral, completeReferral } = require('../controllers/referralCo
 
 const register = async (req, res) => {
   try {
-    const { name, email, phone, password, address, dob, gender, referralCode } = req.body;
+    const { name, fatherName, email, phone, password, address, dob, gender, referralCode } = req.body;
     const files = req.files;
 
     // Validate input
     if (!name || !email || !phone || !password || !address) {
       return res.status(400).json({ message: 'All text fields are required' });
-    }
-
-    if (!files || !files.aadhaar || !files.aadhaar[0] || !files.pancard || !files.pancard[0] || !files.photo || !files.photo[0]) {
-      return res.status(400).json({ message: 'All document files are required' });
     }
 
     // Check if user exists
@@ -39,29 +36,45 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Upload files to Cloudinary
-    const uploadToCloudinary = (file, folder) => {
-      return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { folder, resource_type: 'auto' },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result.secure_url);
-          }
-        );
-        stream.end(file.buffer);
-      });
-    };
+    // Upload files to Cloudinary if configured and files provided
+    let aadhaarUrl = null;
+    let pancardUrl = null;
+    let photoUrl = null;
 
-    const [aadhaarUrl, pancardUrl, photoUrl] = await Promise.all([
-      uploadToCloudinary(files.aadhaar[0], 'user-docs/aadhaar'),
-      uploadToCloudinary(files.pancard[0], 'user-docs/pancard'),
-      uploadToCloudinary(files.photo[0], 'user-docs/photo')
-    ]);
+    if (process.env.CLOUDINARY_CLOUD_NAME && files) {
+      const uploadToCloudinary = (file, folder) => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder, resource_type: 'auto' },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result.secure_url);
+            }
+          );
+          stream.end(file.buffer);
+        });
+      };
+
+      try {
+        const uploads = [];
+        if (files.aadhaar && files.aadhaar[0]) uploads.push(uploadToCloudinary(files.aadhaar[0], 'user-docs/aadhaar'));
+        if (files.pancard && files.pancard[0]) uploads.push(uploadToCloudinary(files.pancard[0], 'user-docs/pancard'));
+        if (files.photo && files.photo[0]) uploads.push(uploadToCloudinary(files.photo[0], 'user-docs/photo'));
+
+        const results = await Promise.all(uploads);
+        aadhaarUrl = results[0] || null;
+        pancardUrl = results[1] || null;
+        photoUrl = results[2] || null;
+      } catch (uploadError) {
+        console.error('File upload failed:', uploadError.message);
+        // Continue with null URLs
+      }
+    }
 
     // Create user
     const user = await User.create({
       name: name.trim(),
+      fatherName: fatherName ? fatherName.trim() : '',
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
       password,
@@ -71,6 +84,13 @@ const register = async (req, res) => {
       aadhaarUrl,
       pancardUrl,
       photoUrl
+    });
+
+    // Create user details
+    await UserDetails.create({
+      user: user._id,
+      dateOfBirth: new Date(dob),
+      gender
     });
 
     // Process referral if code provided
@@ -135,10 +155,31 @@ const login = async (req, res) => {
     const needsPayment = !user.serviceActivated;
 
     let rewardAmount = 0;
+    const today = new Date();
+    const lastLoginDate = user.lastLogin ? new Date(user.lastLogin) : null;
+
+    // Check if user already logged in today
+    const hasLoggedInToday = lastLoginDate &&
+      lastLoginDate.getDate() === today.getDate() &&
+      lastLoginDate.getMonth() === today.getMonth() &&
+      lastLoginDate.getFullYear() === today.getFullYear();
+
     try {
-      // Calculate and award reward
-      rewardAmount = await calculateReward(user);
-      user.totalCoins += rewardAmount;
+      if (!hasLoggedInToday) {
+        // Calculate and award reward only if not logged in today
+        rewardAmount = await calculateReward(user);
+        user.totalCoins += rewardAmount;
+
+        // Log the reward
+        await RewardLog.create({
+          user: user._id,
+          coinsEarned: rewardAmount,
+          reason: 'login',
+          tierAtTime: user.tier,
+          loginCount: user.loginCount + 1
+        });
+      }
+
       user.loginCount += 1;
       user.lastLogin = new Date();
 
@@ -146,15 +187,6 @@ const login = async (req, res) => {
       updateUserTier(user);
 
       await user.save();
-
-      // Log the reward
-      await RewardLog.create({
-        user: user._id,
-        coinsEarned: rewardAmount,
-        reason: 'login',
-        tierAtTime: user.tier,
-        loginCount: user.loginCount
-      });
     } catch (rewardError) {
       console.error('Reward calculation failed:', rewardError.message);
       // Still update login count and last login
@@ -260,23 +292,51 @@ const resetPassword = async (req, res) => {
 // @access  Private
 const createPaymentOrder = async (req, res) => {
   try {
+    const { amount } = req.body;
+    console.log('Creating payment order for amount:', amount);
+
+    // Validate amount
+    if (!amount || amount <= 0) {
+      console.log('Invalid amount:', amount);
+      return res.status(400).json({ message: 'Invalid amount' });
+    }
+
     const user = await User.findById(req.user._id);
     if (!user) {
+      console.log('User not found for payment order');
       return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.paymentStatus === 'completed') {
+      console.log('Payment already completed for user:', user._id);
       return res.status(400).json({ message: 'Payment already completed' });
     }
 
+    const amountInPaise = Math.round(amount * 100); // Convert to paise and round
+    console.log('Amount in paise:', amountInPaise);
+
+    // Generate short receipt ID (max 40 chars)
+    const shortId = user._id.toString().slice(-8);
+    const timestamp = Date.now().toString().slice(-6);
+    const receipt = `rcpt_${shortId}_${timestamp}`;
+
     const options = {
-      amount: 100 * 100, // 100 INR in paise
+      amount: amountInPaise,
       currency: 'INR',
-      receipt: `receipt_${user._id}`,
+      receipt: receipt,
       payment_capture: 1
     };
 
+    console.log('Razorpay order options:', options);
+
+    // Check if Razorpay is properly configured
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      console.error('Razorpay keys not configured');
+      return res.status(500).json({ message: 'Payment service not configured. Please contact support.' });
+    }
+
     const order = await razorpay.orders.create(options);
+    console.log('Razorpay order created:', order.id);
 
     res.json({
       orderId: order.id,
@@ -284,13 +344,17 @@ const createPaymentOrder = async (req, res) => {
       currency: order.currency
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error creating payment order:', error.message);
+    console.error('Full error:', error);
+    res.status(500).json({ message: 'Failed to create payment order. Please try again.' });
   }
 };
 
 // @desc    Verify payment
 // @route   POST /api/auth/verify-payment
 // @access  Private
+const Transaction = require('../models/Transaction');
+
 const verifyPayment = async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
@@ -310,6 +374,19 @@ const verifyPayment = async (req, res) => {
       user.paymentStatus = 'completed';
       user.serviceActivated = true;
       await user.save();
+
+      // Create transaction record for payment
+      await Transaction.create({
+        user: user._id,
+        apiResponse: {
+          razorpay_order_id,
+          razorpay_payment_id,
+          razorpay_signature
+        },
+        status: 'SUCCESS',
+        amount: 100,
+        currency: 'INR'
+      });
 
       // Complete referral if user was referred
       await completeReferral(user._id);

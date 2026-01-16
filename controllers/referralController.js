@@ -1,10 +1,16 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Referral = require('../models/Referral');
 const RewardLog = require('../models/RewardLog');
 
-// Generate referral code for user
-const generateReferralCode = async (req, res) => {
+/**
+ * ===============================
+ * Generate referral code for user
+ * ===============================
+ */const generateReferralCode = async (req, res) => {
   try {
+    console.log('🔥 generateReferralCode HIT');
+
     const userId = req.user.id;
     const user = await User.findById(userId);
 
@@ -12,73 +18,126 @@ const generateReferralCode = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // 🔴 IMPORTANT FIX START
     if (user.referralCode) {
-      return res.status(400).json({ message: 'Referral code already exists', referralCode: user.referralCode });
-    }
+      console.log('ℹ️ Existing referralCode:', user.referralCode);
 
-    // Generate unique referral code
+      // 👉 CHECK: referral collection me entry hai ya nahi
+      const existingReferral = await Referral.findOne({
+        referrer: user._id,
+        referralCode: user.referralCode
+      });
+
+      // 👉 AGAR NAHI HAI → CREATE KARO
+      if (!existingReferral) {
+        console.log('⚠️ Referral doc missing, creating now');
+
+        await Referral.create({
+          referrer: user._id,
+          referralCode: user.referralCode,
+          referred: null,
+          status: 'pending'
+        });
+
+        console.log('✅ Referral doc CREATED for existing code');
+      }
+
+      return res.status(200).json({
+        message: 'Referral code retrieved',
+        referralCode: user.referralCode
+      });
+    }
+    // 🔴 IMPORTANT FIX END
+
+    // Generate unique code
     let referralCode;
     let exists = true;
+
     while (exists) {
-      referralCode = 'REF' + Math.random().toString(36).substr(2, 6).toUpperCase();
-      exists = await User.findOne({ referralCode });
+      referralCode =
+        'REF' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      exists = await Referral.exists({ referralCode });
     }
 
     user.referralCode = referralCode;
     await user.save();
 
-    res.json({ message: 'Referral code generated successfully', referralCode });
+    await Referral.create({
+      referrer: user._id,
+      referralCode,
+      referred: null,
+      status: 'pending'
+    });
+
+    console.log('✅ New referral created');
+
+    return res.status(200).json({
+      message: 'Referral code generated successfully',
+      referralCode
+    });
+
   } catch (error) {
-    console.error('Generate referral code error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('❌ Generate referral code error:', error);
+    return res.status(500).json({ message: error.message });
   }
 };
 
-// Get user's referral stats
+
+/**
+ * ===============================
+ * Get user's referral stats
+ * ===============================
+ */
 const getReferralStats = async (req, res) => {
   try {
     const userId = req.user.id;
-    const user = await User.findById(userId).populate('referrals', 'name email createdAt');
 
+    const user = await User.findById(userId).lean();
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const totalReferrals = user.referrals.length;
-    const completedReferrals = await Referral.countDocuments({
-      referrer: userId,
-      status: 'completed'
-    });
+    const referrals = await Referral.find({ referrer: userId })
+      .populate('referred', 'name email createdAt serviceActivated')
+      .sort({ createdAt: -1 });
 
-    const pendingReferrals = totalReferrals - completedReferrals;
+    const completedReferrals = referrals.filter(r => r.status === 'completed').length;
+    const pendingReferrals = referrals.filter(r => r.status === 'pending').length;
 
-    // Calculate total coins earned from referrals
-    const referralRewards = await RewardLog.find({
+    const rewardLogs = await RewardLog.find({
       user: userId,
       reason: 'Referral Bonus'
     });
 
-    const totalCoinsEarned = referralRewards.reduce((sum, reward) => sum + reward.coinsEarned, 0);
+    const totalCoinsEarned = rewardLogs.reduce(
+      (sum, r) => sum + r.coinsEarned,
+      0
+    );
 
-    res.json({
-      referralCode: user.referralCode,
-      totalReferrals,
+    return res.status(200).json({
+      referralCode: user.referralCode || null,
+      totalReferrals: referrals.length,
       completedReferrals,
       pendingReferrals,
       totalCoinsEarned,
-      referrals: user.referrals
+      referrals
     });
+
   } catch (error) {
     console.error('Get referral stats error:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: error.message });
   }
 };
 
-// Get all referrals for admin
+/**
+ * ===============================
+ * Admin: Get all referrals
+ * ===============================
+ */
 const getAllReferrals = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
     const referrals = await Referral.find()
@@ -90,85 +149,82 @@ const getAllReferrals = async (req, res) => {
 
     const total = await Referral.countDocuments();
 
-    res.json({
+    return res.status(200).json({
       referrals,
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(total / limit),
-        totalReferrals: total,
-        hasNext: page * limit < total,
-        hasPrev: page > 1
+        totalReferrals: total
       }
     });
+
   } catch (error) {
     console.error('Get all referrals error:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: error.message });
   }
 };
 
-// Process referral when user signs up with code
+/**
+ * ===============================
+ * Process referral on signup
+ * ===============================
+ */
 const processReferral = async (referralCode, newUserId) => {
   try {
-    const referrer = await User.findOne({ referralCode });
+    if (!referralCode) return;
 
-    if (!referrer) {
-      return; // Invalid referral code, continue without error
-    }
-
-    // Create referral record
-    const referral = new Referral({
-      referrer: referrer._id,
-      referred: newUserId,
+    const referral = await Referral.findOne({
       referralCode,
-      status: 'pending'
+      referred: null
     });
 
+    if (!referral) return;
+
+    referral.referred = newUserId;
+    referral.status = 'pending';
     await referral.save();
 
-    // Add to referrer's referrals array
-    referrer.referrals.push(newUserId);
-    await referrer.save();
-
-    // Update new user's referredBy
-    await User.findByIdAndUpdate(newUserId, { referredBy: referrer._id });
-
-    // Check if referral should be completed (user has activated service)
-    // This will be called after service activation
+    await User.findByIdAndUpdate(newUserId, {
+      referredBy: referral.referrer
+    });
 
   } catch (error) {
     console.error('Process referral error:', error);
   }
 };
 
-// Complete referral when referred user activates service
+/**
+ * ===============================
+ * Complete referral on activation
+ * ===============================
+ */
 const completeReferral = async (userId) => {
   try {
-    const referral = await Referral.findOne({ referred: userId, status: 'pending' });
+    const referral = await Referral.findOne({
+      referred: userId,
+      status: 'pending'
+    });
 
-    if (!referral) {
-      return;
-    }
+    if (!referral) return;
 
     referral.status = 'completed';
-    referral.coinsEarned = 50; // Referral bonus
+    referral.coinsEarned = 50;
     await referral.save();
 
-    // Give coins to referrer
     const referrer = await User.findById(referral.referrer);
-    if (referrer) {
-      referrer.totalCoins += 50;
-      referrer.updateTier();
-      await referrer.save();
+    if (!referrer) return;
 
-      // Log the reward
-      const rewardLog = new RewardLog({
-        user: referrer._id,
-        reason: 'Referral Bonus',
-        coinsEarned: 50,
-        tierAtTime: referrer.tier
-      });
-      await rewardLog.save();
-    }
+    referrer.totalCoins += 50;
+    referrer.updateTier();
+    await referrer.save();
+
+    await RewardLog.create({
+      user: referrer._id,
+      reason: 'Referral Bonus',
+      coinsEarned: 50,
+      tierAtTime: referrer.tier
+    });
+
   } catch (error) {
     console.error('Complete referral error:', error);
   }

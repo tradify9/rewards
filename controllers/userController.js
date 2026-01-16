@@ -111,12 +111,12 @@ const transferCoins = async (req, res) => {
       return res.status(400).json({ message: 'Cannot transfer to yourself' });
     }
 
-    if (sender.totalCoins < amount) {
-      return res.status(400).json({ message: 'Insufficient coins' });
+    if (sender.totalGold < amount) {
+      return res.status(400).json({ message: 'Insufficient gold coins' });
     }
 
-    sender.totalCoins -= amount;
-    recipient.totalCoins += amount;
+    sender.totalGold -= amount;
+    recipient.totalGold += amount;
 
     await sender.save();
     await recipient.save();
@@ -142,10 +142,84 @@ const transferCoins = async (req, res) => {
   }
 };
 
+// @desc    Get user by unique ID
+// @route   GET /api/users/by-unique-id/:uniqueId
+// @access  Private
+const getUserByUniqueId = async (req, res) => {
+  try {
+    const { uniqueId } = req.params;
+
+    const user = await User.findOne({ uniqueId }).select('name uniqueId tier totalCoins');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Pay coins to another user
+// @route   POST /api/users/pay-to-user
+// @access  Private
+const payToUser = async (req, res) => {
+  try {
+    const { recipientId, amount, note } = req.body;
+
+    if (!recipientId || !amount || amount <= 0) {
+      return res.status(400).json({ message: 'Invalid recipient or amount' });
+    }
+
+    const sender = await User.findById(req.user._id);
+    const recipient = await User.findById(recipientId);
+
+    if (!recipient) {
+      return res.status(404).json({ message: 'Recipient not found' });
+    }
+
+    if (sender._id.equals(recipient._id)) {
+      return res.status(400).json({ message: 'Cannot pay to yourself' });
+    }
+
+    if (sender.totalGold < amount) {
+      return res.status(400).json({ message: 'Insufficient gold coins' });
+    }
+
+    sender.totalGold -= amount;
+    recipient.totalGold += amount;
+
+    await sender.save();
+    await recipient.save();
+
+    // Log the payment
+    await RewardLog.create({
+      user: sender._id,
+      coinsEarned: -amount,
+      reason: `payment to ${recipient.name}`,
+      tierAtTime: sender.tier
+    });
+
+    await RewardLog.create({
+      user: recipient._id,
+      coinsEarned: amount,
+      reason: `payment from ${sender.name}`,
+      tierAtTime: recipient.tier
+    });
+
+    res.json({ message: 'Payment successful' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getLeaderboard,
   updateBankDetails,
   getRewardHistory,
   getDashboard,
-  transferCoins
+  transferCoins,
+  getUserByUniqueId,
+  payToUser
 };

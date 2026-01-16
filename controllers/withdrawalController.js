@@ -1,5 +1,6 @@
 const Withdrawal = require('../models/Withdrawal');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');  // ⭐ ADD THIS
 const { processPayout } = require('../utils/payout');
 const { sendWithdrawalSuccessEmail, sendWithdrawalFailedEmail } = require('../utils/sendMail');
 
@@ -29,29 +30,27 @@ const createWithdrawal = async (req, res) => {
     const withdrawal = await Withdrawal.create({
       user: user._id,
       amount,
-      status: 'PENDING',         // ⭐ IMPORTANT
+      status: 'PENDING',
       bankDetails: user.bankDetails
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Withdrawal request created successfully',
       withdrawal
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
 // ⭐ User can view their withdrawals
 const getWithdrawals = async (req, res) => {
   try {
-    const withdrawals = await Withdrawal.find({ user: req.user._id })
-      .sort({ createdAt: -1 });
-
-    res.json(withdrawals);
+    const withdrawals = await Withdrawal.find({ user: req.user._id }).sort({ createdAt: -1 });
+    return res.json(withdrawals);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -68,40 +67,70 @@ const approveWithdrawal = async (req, res) => {
       return res.status(400).json({ message: 'Withdrawal already processed' });
     }
 
+    // First approve
     withdrawal.status = 'APPROVED';
     await withdrawal.save();
 
     // Process Payout
     const payoutResult = await processPayout(withdrawal);
 
+    const user = await User.findById(withdrawal.user);
+
+    // ⭐ SUCCESS FLOW
     if (payoutResult.success) {
       withdrawal.status = 'SUCCESS';
       withdrawal.razorpayPayoutId = payoutResult.payoutId;
       withdrawal.transactionId = payoutResult.payout.id;
       await withdrawal.save();
 
-      const user = await User.findById(withdrawal.user);
+      // ⭐ CREATE TRANSACTION ENTRY
+      await Transaction.create({
+        withdrawal: withdrawal._id,
+        user: user._id,
+        apiResponse: payoutResult,
+        status: 'SUCCESS',
+        amount: withdrawal.amount,
+        currency: 'INR',
+        payoutId: payoutResult.payoutId
+      });
+
       await sendWithdrawalSuccessEmail(user, withdrawal);
 
-      res.json({ message: 'Withdrawal processed successfully', withdrawal });
-
-    } else {
-      withdrawal.status = 'FAILED';
-      withdrawal.notes = payoutResult.error;
-      await withdrawal.save();
-
-      // Refund coins
-      const user = await User.findById(withdrawal.user);
-      user.totalCoins += withdrawal.amount;
-      await user.save();
-
-      await sendWithdrawalFailedEmail(user, withdrawal, payoutResult.error);
-
-      res.status(500).json({ message: 'Payout failed', error: payoutResult.error });
+      return res.json({
+        message: 'Withdrawal processed successfully',
+        withdrawal
+      });
     }
 
+    // ⭐ FAILED FLOW
+    withdrawal.status = 'FAILED';
+    withdrawal.notes = payoutResult.error;
+    await withdrawal.save();
+
+    // Refund coins
+    user.totalCoins += withdrawal.amount;
+    await user.save();
+
+    // ⭐ CREATE FAILED TRANSACTION ENTRY
+    await Transaction.create({
+      withdrawal: withdrawal._id,
+      user: user._id,
+      apiResponse: payoutResult,
+      status: 'FAILED',
+      amount: withdrawal.amount,
+      currency: 'INR',
+      errorMessage: payoutResult.error
+    });
+
+    await sendWithdrawalFailedEmail(user, withdrawal, payoutResult.error);
+
+    return res.status(500).json({
+      message: 'Payout failed',
+      error: payoutResult.error
+    });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 

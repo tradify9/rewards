@@ -7,6 +7,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  fatherName: {
+    type: String,
+    trim: true
+  },
   email: {
     type: String,
     required: true,
@@ -34,19 +38,18 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['Male', 'Female', 'Other']
   },
-  aadhaarUrl: {
-    type: String
-  },
-  pancardUrl: {
-    type: String
-  },
-  photoUrl: {
-    type: String
-  },
+
+  // Uploaded documents URL
+  aadhaarUrl: String,
+  pancardUrl: String,
+  photoUrl: String,
+
+  // Auto-generate unique user ID
   uniqueId: {
     type: String,
     unique: true
   },
+
   totalCoins: {
     type: Number,
     default: 0
@@ -55,11 +58,15 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+
+  // Tier system
   tier: {
     type: String,
     enum: ['Silver', 'Gold', 'Platinum'],
     default: 'Silver'
   },
+
+  // Bank details for withdrawals
   bankDetails: {
     accountHolderName: String,
     accountNumber: String,
@@ -67,60 +74,86 @@ const userSchema = new mongoose.Schema({
     bankName: String,
     upiId: String
   },
+
   paymentStatus: {
     type: String,
     enum: ['pending', 'completed'],
     default: 'pending'
   },
+
   serviceActivated: {
     type: Boolean,
     default: false
   },
+
   isAdmin: {
     type: Boolean,
     default: false
   },
+
   blocked: {
     type: Boolean,
     default: false
   },
-  lastLogin: {
-    type: Date
-  },
+
+  lastLogin: Date,
   loginCount: {
     type: Number,
     default: 0
   },
+
   resetPasswordToken: String,
   resetPasswordExpires: Date,
+
+  // ⭐ FIXED FIELD
   referralCode: {
     type: String,
-    unique: true
+    unique: true,
+    sparse: true
   },
+
   referredBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  referrals: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }]
+
+  referrals: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ]
 }, {
   timestamps: true
 });
 
-// Generate uniqueId before saving
-userSchema.pre('save', async function(next) {
+// Auto-generate unique User ID (USRxxxx) and Referral Code
+userSchema.pre('save', async function (next) {
   if (!this.uniqueId) {
     let uniqueId;
     let exists = true;
+
     while (exists) {
       uniqueId = 'USR' + Math.random().toString(36).substr(2, 9).toUpperCase();
       exists = await mongoose.models.User.findOne({ uniqueId });
     }
+
     this.uniqueId = uniqueId;
   }
 
+  if (!this.referralCode) {
+    let referralCode;
+    let exists = true;
+
+    while (exists) {
+      referralCode = 'REF' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      exists = await mongoose.models.User.findOne({ referralCode });
+    }
+
+    this.referralCode = referralCode;
+  }
+
+  // Password hashing only when modified
   if (!this.isModified('password')) return next();
 
   const salt = await bcrypt.genSalt(10);
@@ -128,13 +161,13 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
-// Compare password method
-userSchema.methods.comparePassword = async function(candidatePassword) {
+// Compare password
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Update tier based on totalCoins
-userSchema.methods.updateTier = function() {
+// Update tier based on coins
+userSchema.methods.updateTier = function () {
   if (this.totalCoins >= 5000) {
     this.tier = 'Platinum';
   } else if (this.totalCoins >= 1000) {

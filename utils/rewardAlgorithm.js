@@ -1,11 +1,34 @@
 const RewardLog = require('../models/RewardLog');
 
-// Reward algorithm - random login rewards up to 10
+// Reward algorithm - improved to make earning easier
 const calculateReward = async (user) => {
-  // Give random 1-10 coins on login
-  const randomReward = Math.floor(Math.random() * 10) + 1; // 1 to 10
+  // Base reward: random 5-20 coins (increased from 1-10)
+  const baseReward = Math.floor(Math.random() * 16) + 5; // 5 to 20
 
-  return randomReward;
+  // Streak bonus: if logged in consecutively, add bonus
+  let streakBonus = 0;
+  const now = new Date();
+  const lastLogin = user.lastLogin ? new Date(user.lastLogin) : null;
+
+  if (lastLogin) {
+    const daysDiff = Math.floor((now - lastLogin) / (1000 * 60 * 60 * 24));
+    if (daysDiff === 1) {
+      // Consecutive day
+      streakBonus = Math.floor(baseReward * 0.5); // 50% bonus
+    }
+  }
+
+  // Tier bonus: higher tiers get more
+  let tierBonus = 0;
+  if (user.tier === 'Gold') {
+    tierBonus = 5;
+  } else if (user.tier === 'Platinum') {
+    tierBonus = 10;
+  }
+
+  const totalReward = baseReward + streakBonus + tierBonus;
+
+  return totalReward;
 };
 
 // Update user tier based on total coins
