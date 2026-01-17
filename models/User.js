@@ -39,9 +39,16 @@ const userSchema = new mongoose.Schema({
     enum: ['Male', 'Female', 'Other']
   },
 
-  // Uploaded documents URL
-  aadhaarUrl: String,
-  pancardUrl: String,
+  // Document numbers
+  aadhaarNumber: {
+    type: String,
+    trim: true
+  },
+  panNumber: {
+    type: String,
+    trim: true,
+    uppercase: true
+  },
   photoUrl: String,
 
   // Auto-generate unique user ID
@@ -84,6 +91,12 @@ const userSchema = new mongoose.Schema({
   serviceActivated: {
     type: Boolean,
     default: false
+  },
+
+  kycStatus: {
+    type: String,
+    enum: ['not_submitted', 'pending', 'verified', 'rejected'],
+    default: 'not_submitted'
   },
 
   isAdmin: {

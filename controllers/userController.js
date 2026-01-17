@@ -17,6 +17,56 @@ const getLeaderboard = async (req, res) => {
   }
 };
 
+// @desc    Update user profile
+// @route   PUT /api/users/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+  try {
+    const { name, fatherName, phone, address, dob, gender, aadhaarNumber, panNumber } = req.body;
+
+    const user = await User.findById(req.user._id);
+
+    if (name) user.name = name;
+    if (fatherName !== undefined) user.fatherName = fatherName;
+    if (phone) user.phone = phone;
+    if (address !== undefined) user.address = address;
+    if (dob) user.dob = new Date(dob);
+    if (gender) user.gender = gender;
+
+    // Validate and update Aadhaar number
+    if (aadhaarNumber) {
+      if (!/^\d{12}$/.test(aadhaarNumber)) {
+        return res.status(400).json({ message: 'Aadhaar number must be 12 digits' });
+      }
+      // Check if another user already has this Aadhaar number
+      const existingUser = await User.findOne({ aadhaarNumber, _id: { $ne: user._id } });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Aadhaar number already registered' });
+      }
+      user.aadhaarNumber = aadhaarNumber;
+    }
+
+    // Validate and update PAN number
+    if (panNumber) {
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNumber.toUpperCase())) {
+        return res.status(400).json({ message: 'Invalid PAN number format' });
+      }
+      // Check if another user already has this PAN number
+      const existingUser = await User.findOne({ panNumber: panNumber.toUpperCase(), _id: { $ne: user._id } });
+      if (existingUser) {
+        return res.status(400).json({ message: 'PAN number already registered' });
+      }
+      user.panNumber = panNumber.toUpperCase();
+    }
+
+    await user.save();
+
+    res.json({ message: 'Profile updated successfully', user });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Update user bank details
 // @route   PUT /api/users/bank-details
 // @access  Private
@@ -216,6 +266,7 @@ const payToUser = async (req, res) => {
 
 module.exports = {
   getLeaderboard,
+  updateProfile,
   updateBankDetails,
   getRewardHistory,
   getDashboard,

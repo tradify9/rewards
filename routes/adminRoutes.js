@@ -4,6 +4,7 @@ const { getUsers, getWithdrawals, getAnalytics, updateUser } = require('../contr
 const { getUserDetails, createOrUpdateUserDetails, deleteUserDetails } = require('../controllers/userDetailsController');
 const { getTransactions } = require('../controllers/transactionController');
 const { getSettings, updateSetting } = require('../controllers/settingsController');
+const { getActivityLogs, getActivityStats, getActivityLogById, cleanupOldLogs } = require('../controllers/activityLogController');
 const { protect } = require('../middleware/authMiddleware');
 const { admin } = require('../middleware/adminMiddleware');
 
@@ -23,5 +24,11 @@ router.get('/transactions', protect, admin, getTransactions);
 // Settings routes
 router.get('/settings', protect, admin, getSettings);
 router.put('/settings/:key', protect, admin, updateSetting);
+
+// Activity Logs routes
+router.get('/activity-logs', protect, admin, getActivityLogs);
+router.get('/activity-logs/stats', protect, admin, getActivityStats);
+router.get('/activity-logs/:id', protect, admin, getActivityLogById);
+router.delete('/activity-logs/cleanup', protect, admin, cleanupOldLogs);
 
 module.exports = router;

@@ -22,12 +22,22 @@ const { processReferral, completeReferral } = require('../controllers/referralCo
 
 const register = async (req, res) => {
   try {
-    const { name, fatherName, email, phone, password, address, dob, gender, referralCode } = req.body;
+    const { name, fatherName, email, phone, password, address, dob, gender, aadhaarNumber, panNumber, referralCode } = req.body;
     const files = req.files;
 
     // Validate input
-    if (!name || !email || !phone || !password || !address) {
-      return res.status(400).json({ message: 'All text fields are required' });
+    if (!name || !email || !phone || !password || !address || !aadhaarNumber || !panNumber) {
+      return res.status(400).json({ message: 'All required fields are required' });
+    }
+
+    // Validate Aadhaar number (12 digits)
+    if (!/^\d{12}$/.test(aadhaarNumber)) {
+      return res.status(400).json({ message: 'Aadhaar number must be 12 digits' });
+    }
+
+    // Validate PAN number (10 characters, format: AAAAA9999A)
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNumber.toUpperCase())) {
+      return res.status(400).json({ message: 'Invalid PAN number format' });
     }
 
     // Check if user exists
@@ -36,12 +46,22 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Upload files to Cloudinary if configured and files provided
-    let aadhaarUrl = null;
-    let pancardUrl = null;
+    // Check if Aadhaar number already exists
+    const aadhaarExists = await User.findOne({ aadhaarNumber: aadhaarNumber.trim() });
+    if (aadhaarExists) {
+      return res.status(400).json({ message: 'Aadhaar number already registered' });
+    }
+
+    // Check if PAN number already exists
+    const panExists = await User.findOne({ panNumber: panNumber.toUpperCase().trim() });
+    if (panExists) {
+      return res.status(400).json({ message: 'PAN number already registered' });
+    }
+
+    // Upload photo to Cloudinary if configured and file provided
     let photoUrl = null;
 
-    if (process.env.CLOUDINARY_CLOUD_NAME && files) {
+    if (process.env.CLOUDINARY_CLOUD_NAME && files && files.photo && files.photo[0]) {
       const uploadToCloudinary = (file, folder) => {
         return new Promise((resolve, reject) => {
           const stream = cloudinary.uploader.upload_stream(
@@ -56,18 +76,10 @@ const register = async (req, res) => {
       };
 
       try {
-        const uploads = [];
-        if (files.aadhaar && files.aadhaar[0]) uploads.push(uploadToCloudinary(files.aadhaar[0], 'user-docs/aadhaar'));
-        if (files.pancard && files.pancard[0]) uploads.push(uploadToCloudinary(files.pancard[0], 'user-docs/pancard'));
-        if (files.photo && files.photo[0]) uploads.push(uploadToCloudinary(files.photo[0], 'user-docs/photo'));
-
-        const results = await Promise.all(uploads);
-        aadhaarUrl = results[0] || null;
-        pancardUrl = results[1] || null;
-        photoUrl = results[2] || null;
+        photoUrl = await uploadToCloudinary(files.photo[0], 'user-docs/photo');
       } catch (uploadError) {
-        console.error('File upload failed:', uploadError.message);
-        // Continue with null URLs
+        console.error('Photo upload failed:', uploadError.message);
+        // Continue with null URL
       }
     }
 
@@ -81,8 +93,8 @@ const register = async (req, res) => {
       address: address.trim(),
       dob: new Date(dob),
       gender,
-      aadhaarUrl,
-      pancardUrl,
+      aadhaarNumber: aadhaarNumber.trim(),
+      panNumber: panNumber.toUpperCase().trim(),
       photoUrl
     });
 

@@ -52,6 +52,7 @@ app.use("/api/transactions", require("./routes/transactionRoutes"));
 app.use("/api/settings", require("./routes/settingsRoutes"));
 app.use("/api/referrals", require("./routes/referralRoutes"));
 app.use("/api/reports", require("./routes/reportRoutes"));
+app.use("/api/kyc", require("./routes/kycRoutes"));
 
 /* -------------------------------
    Health Check
