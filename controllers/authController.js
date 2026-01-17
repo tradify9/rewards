@@ -23,65 +23,17 @@ const { processReferral, completeReferral } = require('../controllers/referralCo
 
 const register = async (req, res) => {
   try {
-    const { name, fatherName, email, phone, password, address, dob, gender, aadhaarNumber, panNumber, referralCode } = req.body;
-    const files = req.files;
+    const { name, fatherName, email, phone, password, dob, gender, referralCode } = req.body;
 
     // Validate input
-    if (!name || !email || !phone || !password || !address || !aadhaarNumber || !panNumber) {
+    if (!name || !email || !phone || !password) {
       return res.status(400).json({ message: 'All required fields are required' });
-    }
-
-    // Validate Aadhaar number (12 digits)
-    if (!/^\d{12}$/.test(aadhaarNumber)) {
-      return res.status(400).json({ message: 'Aadhaar number must be 12 digits' });
-    }
-
-    // Validate PAN number (10 characters, format: AAAAA9999A)
-    if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNumber.toUpperCase())) {
-      return res.status(400).json({ message: 'Invalid PAN number format' });
     }
 
     // Check if user exists
     const userExists = await User.findOne({ email: email.trim().toLowerCase() });
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
-    }
-
-    // Check if Aadhaar number already exists
-    const aadhaarExists = await User.findOne({ aadhaarNumber: aadhaarNumber.trim() });
-    if (aadhaarExists) {
-      return res.status(400).json({ message: 'Aadhaar number already registered' });
-    }
-
-    // Check if PAN number already exists
-    const panExists = await User.findOne({ panNumber: panNumber.toUpperCase().trim() });
-    if (panExists) {
-      return res.status(400).json({ message: 'PAN number already registered' });
-    }
-
-    // Upload photo to Cloudinary if configured and file provided
-    let photoUrl = null;
-
-    if (process.env.CLOUDINARY_CLOUD_NAME && files && files.photo && files.photo[0]) {
-      const uploadToCloudinary = (file, folder) => {
-        return new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            { folder, resource_type: 'auto' },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result.secure_url);
-            }
-          );
-          stream.end(file.buffer);
-        });
-      };
-
-      try {
-        photoUrl = await uploadToCloudinary(files.photo[0], 'user-docs/photo');
-      } catch (uploadError) {
-        console.error('Photo upload failed:', uploadError.message);
-        // Continue with null URL
-      }
     }
 
     // Create user
@@ -91,12 +43,8 @@ const register = async (req, res) => {
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
       password,
-      address: address.trim(),
       dob: new Date(dob),
-      gender,
-      aadhaarNumber: aadhaarNumber.trim(),
-      panNumber: panNumber.toUpperCase().trim(),
-      photoUrl
+      gender
     });
 
     // Create user details
