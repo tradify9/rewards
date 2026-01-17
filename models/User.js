@@ -140,30 +140,24 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Auto-generate unique User ID (USRxxxx) and Referral Code
+// Auto-generate unique User ID (ATC001, ATC002, etc.) and Referral Code
 userSchema.pre('save', async function (next) {
   if (!this.uniqueId) {
-    let uniqueId;
-    let exists = true;
+    // Find the highest ATC number
+    const lastUser = await mongoose.models.User.findOne({ uniqueId: /^ATC\d+$/ }).sort({ uniqueId: -1 });
+    let nextNumber = 1;
 
-    while (exists) {
-      uniqueId = 'USR' + Math.random().toString(36).substr(2, 9).toUpperCase();
-      exists = await mongoose.models.User.findOne({ uniqueId });
+    if (lastUser) {
+      const lastNumber = parseInt(lastUser.uniqueId.replace('ATC', ''));
+      nextNumber = lastNumber + 1;
     }
 
-    this.uniqueId = uniqueId;
+    this.uniqueId = `ATC${nextNumber.toString().padStart(3, '0')}`;
   }
 
   if (!this.referralCode) {
-    let referralCode;
-    let exists = true;
-
-    while (exists) {
-      referralCode = 'REF' + Math.random().toString(36).substr(2, 9).toUpperCase();
-      exists = await mongoose.models.User.findOne({ referralCode });
-    }
-
-    this.referralCode = referralCode;
+    // Referral code is the same as uniqueId
+    this.referralCode = this.uniqueId;
   }
 
   // Password hashing only when modified

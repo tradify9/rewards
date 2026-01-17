@@ -209,26 +209,26 @@ const completeReferral = async (userId) => {
     if (!referral) return;
 
     referral.status = 'completed';
-    referral.coinsEarned = 50;
+    referral.coinsEarned = 1;
     await referral.save();
 
     const referrer = await User.findById(referral.referrer);
     if (!referrer) return;
 
-    referrer.totalCoins += 50;
+    referrer.totalCoins += 1;
     referrer.updateTier();
     await referrer.save();
 
     await RewardLog.create({
       user: referrer._id,
       reason: 'Referral Bonus',
-      coinsEarned: 50,
+      coinsEarned: 1,
       tierAtTime: referrer.tier
     });
 
     // Log referral earned activity
     const referredUser = await User.findById(referral.referred);
-    await logUserActivity.referralEarned(referrer, null, referredUser, 50);
+    await logUserActivity.referralEarned(referrer, null, referredUser, 1);
 
   } catch (error) {
     console.error('Complete referral error:', error);

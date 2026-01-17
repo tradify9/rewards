@@ -343,7 +343,19 @@ const verifyPayment = async (req, res) => {
     if (razorpay_signature === expectedSign) {
       user.paymentStatus = 'completed';
       user.serviceActivated = true;
+
+      // Give 10 coins to the user on payment
+      user.totalCoins += 10;
+      updateUserTier(user);
       await user.save();
+
+      // Log the payment reward
+      await RewardLog.create({
+        user: user._id,
+        coinsEarned: 10,
+        reason: 'Payment Reward',
+        tierAtTime: user.tier
+      });
 
       // Create transaction record for payment
       await Transaction.create({

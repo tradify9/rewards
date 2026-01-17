@@ -151,6 +151,24 @@ const submitKYC = async (req, res) => {
     // Log KYC submission
     await logUserActivity.kycSubmit(req.user, req);
 
+    // Auto-approve KYC after 5 minutes
+    setTimeout(async () => {
+      try {
+        // Update KYC status
+        kyc.status = 'approved';
+        kyc.reviewedAt = new Date();
+        await kyc.save();
+
+        // Update user's KYC status
+        await User.findByIdAndUpdate(req.user._id, { kycStatus: 'verified' });
+
+        // Log auto-approval
+        await logUserActivity.kycApprove({ _id: 'system', name: 'System' }, req.user, { ip: 'auto' });
+      } catch (error) {
+        console.error('Auto KYC approval failed:', error);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
     res.status(201).json({
       message: 'KYC application submitted successfully',
       kyc
