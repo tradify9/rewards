@@ -6,7 +6,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Multer setup for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/register', register);
+router.post('/register', upload.none(), register);
 router.post('/login', login);
 router.get('/profile', protect, getProfile);
 router.post('/forgot-password', forgotPassword);
