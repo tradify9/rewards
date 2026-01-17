@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');  // ⭐ ADD THIS
 const { processPayout } = require('../utils/payout');
 const { sendWithdrawalSuccessEmail, sendWithdrawalFailedEmail } = require('../utils/sendMail');
+const { logUserActivity } = require('../utils/activityLogger');
 
 // ⭐ Create withdrawal request (User)
 const createWithdrawal = async (req, res) => {
@@ -33,6 +34,9 @@ const createWithdrawal = async (req, res) => {
       status: 'PENDING',
       bankDetails: user.bankDetails
     });
+
+    // Log withdrawal request
+    await logUserActivity.withdrawalRequest(user, req, amount);
 
     return res.status(201).json({
       message: 'Withdrawal request created successfully',
@@ -96,6 +100,9 @@ const approveWithdrawal = async (req, res) => {
 
       await sendWithdrawalSuccessEmail(user, withdrawal);
 
+      // Log withdrawal approval
+      await logUserActivity.withdrawalApprove(req.user, user, req, withdrawal.amount);
+
       return res.json({
         message: 'Withdrawal processed successfully',
         withdrawal
@@ -123,6 +130,9 @@ const approveWithdrawal = async (req, res) => {
     });
 
     await sendWithdrawalFailedEmail(user, withdrawal, payoutResult.error);
+
+    // Log withdrawal rejection
+    await logUserActivity.withdrawalReject(req.user, user, req, withdrawal.amount, payoutResult.error);
 
     return res.status(500).json({
       message: 'Payout failed',

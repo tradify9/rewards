@@ -1,6 +1,7 @@
 const Service = require('../models/Service');
 const User = require('../models/User');
 const RewardLog = require('../models/RewardLog');
+const { logUserActivity } = require('../utils/activityLogger');
 
 // @desc    Get all active services
 // @route   GET /api/services
@@ -42,6 +43,9 @@ const redeemService = async (req, res) => {
       reason: 'redemption',
       tierAtTime: user.tier
     });
+
+    // Log activity
+    await logUserActivity.serviceRedeemed(user, req, service.name, service.pointsRequired);
 
     res.json({
       message: 'Service redeemed successfully',

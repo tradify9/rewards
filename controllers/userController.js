@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const RewardLog = require('../models/RewardLog');
+const { logUserActivity } = require('../utils/activityLogger');
 
 // @desc    Get leaderboard
 // @route   GET /api/users/leaderboard
@@ -60,6 +61,19 @@ const updateProfile = async (req, res) => {
     }
 
     await user.save();
+
+    // Log profile update
+    const changes = {};
+    if (name) changes.name = name;
+    if (fatherName !== undefined) changes.fatherName = fatherName;
+    if (phone) changes.phone = phone;
+    if (address !== undefined) changes.address = address;
+    if (dob) changes.dob = dob;
+    if (gender) changes.gender = gender;
+    if (aadhaarNumber) changes.aadhaarNumber = aadhaarNumber;
+    if (panNumber) changes.panNumber = panNumber;
+
+    await logUserActivity.profileUpdate(user, req, changes);
 
     res.json({ message: 'Profile updated successfully', user });
   } catch (error) {
@@ -186,6 +200,10 @@ const transferCoins = async (req, res) => {
       tierAtTime: recipient.tier
     });
 
+    // Log activity
+    await logUserActivity.transferSent(sender, recipient, req, amount);
+    await logUserActivity.transferReceived(recipient, sender, req, amount);
+
     res.json({ message: 'Coins transferred successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -257,6 +275,10 @@ const payToUser = async (req, res) => {
       reason: `payment from ${sender.name}`,
       tierAtTime: recipient.tier
     });
+
+    // Log activity
+    await logUserActivity.paymentMade(sender, recipient, req, amount, note);
+    await logUserActivity.paymentReceived(recipient, sender, req, amount);
 
     res.json({ message: 'Payment successful' });
   } catch (error) {

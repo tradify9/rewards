@@ -7,6 +7,7 @@ const UserDetails = require('../models/UserDetails');
 const RewardLog = require('../models/RewardLog');
 const { calculateReward, updateUserTier } = require('../utils/rewardAlgorithm');
 const { sendWelcomeEmail, sendResetEmail } = require('../utils/sendMail');
+const { logUserActivity } = require('../utils/activityLogger');
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -113,6 +114,9 @@ const register = async (req, res) => {
     // Send welcome email
     await sendWelcomeEmail(user);
 
+    // Log signup activity
+    await logUserActivity.signup(user, req);
+
     res.status(201).json({
       _id: user._id,
       name: user.name,
@@ -207,6 +211,9 @@ const login = async (req, res) => {
       await user.save();
     }
 
+    // Log login activity
+    await logUserActivity.login(user, req);
+
     res.json({
       _id: user._id,
       name: user.name,
@@ -292,6 +299,9 @@ const resetPassword = async (req, res) => {
     user.resetPasswordExpires = undefined;
 
     await user.save();
+
+    // Log password change activity
+    await logUserActivity.passwordChange(user, req);
 
     res.json({ message: 'Password reset successful' });
   } catch (error) {

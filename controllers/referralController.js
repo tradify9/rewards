@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Referral = require('../models/Referral');
 const RewardLog = require('../models/RewardLog');
+const { logUserActivity } = require('../utils/activityLogger');
 
 /**
  * ===============================
@@ -224,6 +225,10 @@ const completeReferral = async (userId) => {
       coinsEarned: 50,
       tierAtTime: referrer.tier
     });
+
+    // Log referral earned activity
+    const referredUser = await User.findById(referral.referred);
+    await logUserActivity.referralEarned(referrer, null, referredUser, 50);
 
   } catch (error) {
     console.error('Complete referral error:', error);

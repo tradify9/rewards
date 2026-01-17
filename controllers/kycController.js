@@ -1,6 +1,7 @@
 const KYC = require('../models/KYC');
 const User = require('../models/User');
 const cloudinary = require('../config/cloudinary');
+const { logUserActivity } = require('../utils/activityLogger');
 
 // @desc    Submit KYC application
 // @route   POST /api/kyc/submit
@@ -147,6 +148,9 @@ const submitKYC = async (req, res) => {
     // Update user's KYC status
     await User.findByIdAndUpdate(req.user._id, { kycStatus: 'pending' });
 
+    // Log KYC submission
+    await logUserActivity.kycSubmit(req.user, req);
+
     res.status(201).json({
       message: 'KYC application submitted successfully',
       kyc
@@ -271,7 +275,15 @@ const reviewKYC = async (req, res) => {
 
     // Update user's KYC status
     const userStatus = status === 'approved' ? 'verified' : 'rejected';
+    const user = await User.findById(kyc.user);
     await User.findByIdAndUpdate(kyc.user, { kycStatus: userStatus });
+
+    // Log KYC review
+    if (status === 'approved') {
+      await logUserActivity.kycApprove(req.user, user, req);
+    } else {
+      await logUserActivity.kycReject(req.user, user, req, rejectionReason);
+    }
 
     res.json({
       message: `KYC application ${status}`,
