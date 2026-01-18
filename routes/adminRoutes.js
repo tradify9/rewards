@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getUsers, getWithdrawals, getAnalytics, updateUser } = require('../controllers/adminController');
+const { getUsers, getWithdrawals, getAnalytics, updateUser, createUser, sendCoinCertificate } = require('../controllers/adminController');
 const { getUserDetails, createOrUpdateUserDetails, deleteUserDetails } = require('../controllers/userDetailsController');
 const { getTransactions } = require('../controllers/transactionController');
 const { getSettings, updateSetting } = require('../controllers/settingsController');
@@ -9,6 +9,8 @@ const { protect } = require('../middleware/authMiddleware');
 const { admin } = require('../middleware/adminMiddleware');
 
 router.get('/users', protect, admin, getUsers);
+router.post('/users', protect, admin, createUser);
+router.post('/users/:id/send-certificate', protect, admin, sendCoinCertificate);
 router.get('/withdrawals', protect, admin, getWithdrawals);
 router.get('/analytics', protect, admin, getAnalytics);
 router.put('/users/:id', protect, admin, updateUser);

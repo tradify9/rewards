@@ -118,32 +118,10 @@ const login = async (req, res) => {
     // Check if service is activated - allow login but redirect to payment
     const needsPayment = !user.serviceActivated;
 
+    // Daily login rewards disabled temporarily
     let rewardAmount = 0;
-    const today = new Date();
-    const lastLoginDate = user.lastLogin ? new Date(user.lastLogin) : null;
-
-    // Check if user already logged in today
-    const hasLoggedInToday = lastLoginDate &&
-      lastLoginDate.getDate() === today.getDate() &&
-      lastLoginDate.getMonth() === today.getMonth() &&
-      lastLoginDate.getFullYear() === today.getFullYear();
 
     try {
-      if (!hasLoggedInToday) {
-        // Calculate and award reward only if not logged in today
-        rewardAmount = await calculateReward(user);
-        user.totalCoins += rewardAmount;
-
-        // Log the reward
-        await RewardLog.create({
-          user: user._id,
-          coinsEarned: rewardAmount,
-          reason: 'login',
-          tierAtTime: user.tier,
-          loginCount: user.loginCount + 1
-        });
-      }
-
       user.loginCount += 1;
       user.lastLogin = new Date();
 
@@ -152,7 +130,7 @@ const login = async (req, res) => {
 
       await user.save();
     } catch (rewardError) {
-      console.error('Reward calculation failed:', rewardError.message);
+      console.error('Login update failed:', rewardError.message);
       // Still update login count and last login
       user.loginCount += 1;
       user.lastLogin = new Date();
