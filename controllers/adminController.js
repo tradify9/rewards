@@ -2,6 +2,9 @@ const User = require('../models/User');
 const Withdrawal = require('../models/Withdrawal');
 const RewardLog = require('../models/RewardLog');
 const Service = require('../models/Service');
+const KYC = require('../models/KYC');
+const Transaction = require('../models/Transaction');
+const ActivityLog = require('../models/ActivityLog');
 const { sendUserCredentialsEmail, sendCoinCertificateEmail } = require('../utils/sendMail');
 const crypto = require('crypto');
 
@@ -192,11 +195,118 @@ const sendCoinCertificate = async (req, res) => {
   }
 };
 
+// @desc    Get dashboard stats
+// @route   GET /api/admin/dashboard-stats
+// @access  Private/Admin
+const getDashboardStats = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Total users
+    const totalUsers = await User.countDocuments();
+
+    // New users today
+    const newUsersToday = await User.countDocuments({
+      createdAt: { $gte: today, $lt: tomorrow }
+    });
+
+    // Total transactions
+    const totalTransactions = await Transaction.countDocuments();
+
+    // Transactions today
+    const transactionsToday = await Transaction.countDocuments({
+      createdAt: { $gte: today, $lt: tomorrow }
+    });
+
+    // Total coins
+    const totalCoinsResult = await RewardLog.aggregate([
+      { $group: { _id: null, total: { $sum: '$coinsEarned' } } }
+    ]);
+    const totalCoins = totalCoinsResult[0]?.total || 0;
+
+    // Total KYC
+    const totalKYC = await KYC.countDocuments();
+
+    // Pending KYC
+    const pendingKYC = await KYC.countDocuments({ status: 'pending' });
+
+    // Pending withdrawals
+    const pendingWithdrawals = await Withdrawal.countDocuments({ status: 'PENDING' });
+
+    // Revenue today (sum of transaction amounts today)
+    const revenueResult = await Transaction.aggregate([
+      { $match: { createdAt: { $gte: today, $lt: tomorrow } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const revenueToday = revenueResult[0]?.total || 0;
+
+    // Pending tickets (placeholder, assuming no ticket system yet)
+    const pendingTickets = 0;
+
+    res.json({
+      totalUsers,
+      newUsersToday,
+      totalTransactions,
+      transactionsToday,
+      totalCoins,
+      totalKYC,
+      pendingKYC,
+      pendingWithdrawals,
+      pendingTickets,
+      revenueToday
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get recent activity
+// @route   GET /api/admin/recent-activity
+// @access  Private/Admin
+const getRecentActivity = async (req, res) => {
+  try {
+    const activities = await ActivityLog.find({})
+      .populate('user', 'name')
+      .sort({ timestamp: -1 })
+      .limit(10)
+      .lean();
+
+    const formattedActivities = activities.map(activity => ({
+      description: activity.description,
+      timestamp: activity.timestamp.toLocaleString(),
+      timeAgo: getTimeAgo(activity.timestamp)
+    }));
+
+    res.json(formattedActivities);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Helper function to calculate time ago
+const getTimeAgo = (date) => {
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - date) / 1000);
+
+  if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`;
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours} hours ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays} days ago`;
+};
+
 module.exports = {
   getUsers,
   getWithdrawals,
   getAnalytics,
   updateUser,
   createUser,
-  sendCoinCertificate
+  sendCoinCertificate,
+  getDashboardStats,
+  getRecentActivity
 };
