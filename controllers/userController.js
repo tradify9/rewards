@@ -229,6 +229,31 @@ const getUserByUniqueId = async (req, res) => {
   }
 };
 
+// @desc    Search users by uniqueId or phone
+// @route   GET /api/users/search?query=...
+// @access  Private
+const searchUser = async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || query.length < 2) {
+      return res.json([]);
+    }
+
+    const users = await User.find({
+      $or: [
+        { uniqueId: new RegExp(query, 'i') },
+        { phone: new RegExp(query, 'i') }
+      ],
+      _id: { $ne: req.user._id } // Exclude self
+    }).select('name uniqueId phone _id').limit(10);
+
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Pay coins to another user
 // @route   POST /api/users/pay-to-user
 // @access  Private
@@ -261,6 +286,9 @@ const payToUser = async (req, res) => {
     await sender.save();
     await recipient.save();
 
+    // Generate transaction ID
+    const transactionId = 'TXN' + Date.now() + Math.random().toString(36).substr(2, 5).toUpperCase();
+
     // Log the payment
     await RewardLog.create({
       user: sender._id,
@@ -280,7 +308,7 @@ const payToUser = async (req, res) => {
     await logUserActivity.paymentMade(sender, recipient, req, amount, note);
     await logUserActivity.paymentReceived(recipient, sender, req, amount);
 
-    res.json({ message: 'Payment successful' });
+    res.json({ message: 'Payment successful', transactionId });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -294,5 +322,6 @@ module.exports = {
   getDashboard,
   transferCoins,
   getUserByUniqueId,
+  searchUser,
   payToUser
 };
