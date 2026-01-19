@@ -10,7 +10,7 @@ router.get('/rewards', protect, getRewardHistory);
 router.get('/dashboard', protect, getDashboard);
 router.post('/transfer-coins', protect, transferCoins);
 router.get('/by-unique-id/:uniqueId', protect, getUserByUniqueId);
-router.get('/search', protect, searchUser);
+router.get('/search', searchUser);
 router.post('/pay-to-user', protect, payToUser);
 
 module.exports = router;

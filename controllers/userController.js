@@ -231,25 +231,38 @@ const getUserByUniqueId = async (req, res) => {
 
 // @desc    Search users by uniqueId or phone
 // @route   GET /api/users/search?query=...
-// @access  Private
+// @access  Public
 const searchUser = async (req, res) => {
   try {
     const { query } = req.query;
 
     if (!query || query.length < 2) {
-      return res.json([]);
+      return res.set('Cache-Control', 'no-cache, no-store, must-revalidate').json([]);
     }
 
-    const users = await User.find({
-      $or: [
-        { uniqueId: new RegExp(query, 'i') },
-        { phone: new RegExp(query, 'i') }
-      ],
-      _id: { $ne: req.user._id } // Exclude self
-    }).select('name uniqueId phone _id').limit(10);
+    // Normalize query: remove +91 prefix and spaces for phone search
+    const normalizedQuery = query.replace(/^\+91\s*/, '').replace(/\s+/g, '');
 
-    res.json(users);
+    const searchQuery = {
+      $or: [
+        { uniqueId: new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { phone: new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { phone: new RegExp(normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { phone: new RegExp(('91' + normalizedQuery).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { phone: new RegExp(('\\+91' + normalizedQuery).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }
+      ]
+    };
+
+    // Exclude self if user is authenticated
+    if (req.user) {
+      searchQuery._id = { $ne: req.user._id };
+    }
+
+    const users = await User.find(searchQuery).select('name uniqueId phone _id').limit(10);
+
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate').json(users);
   } catch (error) {
+    console.error('Search user error:', error);
     res.status(500).json({ message: error.message });
   }
 };
