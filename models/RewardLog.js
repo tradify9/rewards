@@ -15,6 +15,9 @@ const rewardLogSchema = new mongoose.Schema({
     required: true,
     enum: ['login', 'referral', 'bonus', 'redemption', 'transfer']
   },
+  transactionId: {
+    type: String
+  },
   tierAtTime: {
     type: String,
     enum: ['Silver', 'Gold', 'Platinum'],

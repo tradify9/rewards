@@ -121,6 +121,45 @@ const getRewardHistory = async (req, res) => {
   }
 };
 
+// @desc    Get user transaction history (coin transfers)
+// @route   GET /api/users/transactions
+// @access  Private
+const getTransactionHistory = async (req, res) => {
+  try {
+    const transactions = await RewardLog.find({
+      user: req.user._id,
+      reason: 'transfer'
+    })
+    .populate('user', 'name uniqueId')
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+    // For each transaction, find the other party
+    const enrichedTransactions = await Promise.all(
+      transactions.map(async (transaction) => {
+        const relatedLog = await RewardLog.findOne({
+          transactionId: transaction.transactionId,
+          user: { $ne: req.user._id }
+        }).populate('user', 'name uniqueId');
+
+        return {
+          ...transaction.toObject(),
+          otherParty: relatedLog ? {
+            name: relatedLog.user.name,
+            uniqueId: relatedLog.user.uniqueId
+          } : null,
+          type: transaction.coinsEarned > 0 ? 'received' : 'sent',
+          amount: Math.abs(transaction.coinsEarned)
+        };
+      })
+    );
+
+    res.json(enrichedTransactions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Get user dashboard data
 // @route   GET /api/users/dashboard
 // @access  Private
@@ -175,12 +214,12 @@ const transferCoins = async (req, res) => {
       return res.status(400).json({ message: 'Cannot transfer to yourself' });
     }
 
-    if (sender.totalGold < amount) {
-      return res.status(400).json({ message: 'Insufficient gold coins' });
+    if (sender.totalCoins < amount) {
+      return res.status(400).json({ message: 'Insufficient coins' });
     }
 
-    sender.totalGold -= amount;
-    recipient.totalGold += amount;
+    sender.totalCoins -= amount;
+    recipient.totalCoins += amount;
 
     await sender.save();
     await recipient.save();
@@ -289,12 +328,12 @@ const payToUser = async (req, res) => {
       return res.status(400).json({ message: 'Cannot pay to yourself' });
     }
 
-    if (sender.totalGold < amount) {
-      return res.status(400).json({ message: 'Insufficient gold coins' });
+    if (sender.totalCoins < amount) {
+      return res.status(400).json({ message: 'Insufficient coins' });
     }
 
-    sender.totalGold -= amount;
-    recipient.totalGold += amount;
+    sender.totalCoins -= amount;
+    recipient.totalCoins += amount;
 
     await sender.save();
     await recipient.save();
@@ -306,14 +345,16 @@ const payToUser = async (req, res) => {
     await RewardLog.create({
       user: sender._id,
       coinsEarned: -amount,
-      reason: `payment to ${recipient.name}`,
+      reason: 'transfer',
+      transactionId,
       tierAtTime: sender.tier
     });
 
     await RewardLog.create({
       user: recipient._id,
       coinsEarned: amount,
-      reason: `payment from ${sender.name}`,
+      reason: 'transfer',
+      transactionId,
       tierAtTime: recipient.tier
     });
 
@@ -332,6 +373,7 @@ module.exports = {
   updateProfile,
   updateBankDetails,
   getRewardHistory,
+  getTransactionHistory,
   getDashboard,
   transferCoins,
   getUserByUniqueId,
