@@ -2,33 +2,36 @@ const nodemailer = require('nodemailer');
 const { EMAIL_USER, EMAIL_PASS } = require('../config/env');
 
 const transporter = nodemailer.createTransport({
-  host: 'mail.atvanev.in', // Hostinger SMTP host
-  port: 587, // TLS port
-  secure: false, // true for 465, false for other ports
+  host: 'smtp.hostinger.com', // Hostinger SMTP host
+  port: 465, // SSL port
+  secure: true, // true for 465, false for other ports
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS
   },
   tls: {
     rejectUnauthorized: false // For self-signed certificates
-  }
+  },
+  debug: true, // Enable debug output
+  logger: true // Enable logger
 });
 
 // Send email function
 const sendEmail = async (to, subject, html) => {
   try {
     const mailOptions = {
-      from: EMAIL_USER,
+      from: `"Atvan Reward System" <${EMAIL_USER}>`,
       to,
       subject,
       html
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent:', info.messageId);
+    console.log('Email sent successfully:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Email send error:', error);
+    console.error('Email send error:', error.message);
+    console.error('Error details:', error);
     return { success: false, error: error.message };
   }
 };
