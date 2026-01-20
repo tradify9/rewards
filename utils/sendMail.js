@@ -2,10 +2,15 @@ const nodemailer = require('nodemailer');
 const { EMAIL_USER, EMAIL_PASS } = require('../config/env');
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // or your email service
+  host: 'mail.atvanev.in', // Hostinger SMTP host
+  port: 587, // TLS port
+  secure: false, // true for 465, false for other ports
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false // For self-signed certificates
   }
 });
 
