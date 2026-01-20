@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getUsers, getWithdrawals, getAnalytics, updateUser, createUser, sendCoinCertificate, getDashboardStats, getRecentActivity } = require('../controllers/adminController');
+const { getUsers, getWithdrawals, getAnalytics, updateUser, deleteUser, createUser, sendCoinCertificate, getDashboardStats, getRecentActivity } = require('../controllers/adminController');
 const { getUserDetails, createOrUpdateUserDetails, deleteUserDetails } = require('../controllers/userDetailsController');
 const { getTransactions } = require('../controllers/transactionController');
 const { getSettings, updateSetting } = require('../controllers/settingsController');
@@ -16,6 +16,7 @@ router.get('/analytics', protect, admin, getAnalytics);
 router.get('/dashboard-stats', protect, admin, getDashboardStats);
 router.get('/recent-activity', protect, admin, getRecentActivity);
 router.put('/users/:id', protect, admin, updateUser);
+router.delete('/users/:id', protect, admin, deleteUser);
 
 // User Details routes
 router.get('/user-details', protect, admin, getUserDetails);

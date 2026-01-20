@@ -118,6 +118,33 @@ const updateUser = async (req, res) => {
   }
 };
 
+// @desc    Delete user (Admin only)
+// @route   DELETE /api/admin/users/:id
+// @access  Private/Admin
+const deleteUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete associated data
+    await RewardLog.deleteMany({ user: req.params.id });
+    await Transaction.deleteMany({ user: req.params.id });
+    await Withdrawal.deleteMany({ user: req.params.id });
+    await KYC.deleteMany({ user: req.params.id });
+    await ActivityLog.deleteMany({ user: req.params.id });
+
+    // Delete the user
+    await User.findByIdAndDelete(req.params.id);
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Create new user (Admin only)
 // @route   POST /api/admin/users
 // @access  Private/Admin
@@ -305,6 +332,7 @@ module.exports = {
   getWithdrawals,
   getAnalytics,
   updateUser,
+  deleteUser,
   createUser,
   sendCoinCertificate,
   getDashboardStats,
