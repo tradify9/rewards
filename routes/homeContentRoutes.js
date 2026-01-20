@@ -12,7 +12,7 @@ router.route('/')
   .get(getHomeContent)
   .put(protect, admin, updateHomeContent);
 
-// router.route('/section/:id')
-//   .put(protect, admin, updateSection);
+router.route('/section/:id')
+  .put(protect, admin, updateSection);
 
 module.exports = router;

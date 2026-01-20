@@ -82,13 +82,11 @@ const updateHomeContent = async (req, res) => {
   try {
     const { sections } = req.body;
 
-    let homeContent = await HomeContent.findOne();
-    if (!homeContent) {
-      homeContent = new HomeContent();
-    }
-
-    homeContent.sections = sections;
-    await homeContent.save();
+    const homeContent = await HomeContent.findOneAndUpdate(
+      {},
+      { sections },
+      { upsert: true, new: true, runValidators: false }
+    );
 
     res.json(homeContent);
   } catch (error) {
