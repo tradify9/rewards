@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const {
   getHomeContent,
-  updateHomeContent
+  updateHomeContent,
+  updateSection
 } = require('../controllers/homeContentController');
 
 const { protect } = require('../middleware/authMiddleware');
