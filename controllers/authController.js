@@ -305,7 +305,7 @@ const Transaction = require('../models/Transaction');
 
 const verifyPayment = async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
 
     const user = await User.findById(req.user._id);
     if (!user) {
@@ -322,15 +322,16 @@ const verifyPayment = async (req, res) => {
       user.paymentStatus = 'completed';
       user.serviceActivated = true;
 
-      // Give 10 coins to the user on payment
-      user.totalCoins += 10;
+      // Give coins based on payment amount
+      const coinsToAdd = Math.floor(amount / 10); // ₹100 = 10 coins, ₹1000 = 100 coins, ₹10000 = 1000 coins
+      user.totalCoins += coinsToAdd;
       updateUserTier(user);
       await user.save();
 
       // Log the payment reward
       await RewardLog.create({
         user: user._id,
-        coinsEarned: 10,
+        coinsEarned: coinsToAdd,
         reason: 'Payment Reward',
         tierAtTime: user.tier
       });
@@ -344,7 +345,7 @@ const verifyPayment = async (req, res) => {
           razorpay_signature
         },
         status: 'SUCCESS',
-        amount: 100,
+        amount: amount,
         currency: 'INR'
       });
 
