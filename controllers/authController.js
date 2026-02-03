@@ -1,69 +1,76 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const cloudinary = require('../config/cloudinary');
 const razorpay = require('../config/razorpay');
+
 const User = require('../models/User');
 const UserDetails = require('../models/UserDetails');
 const RewardLog = require('../models/RewardLog');
+const Transaction = require('../models/Transaction');
+
 const { calculateReward, updateUserTier } = require('../utils/rewardAlgorithm');
 const { sendWelcomeEmail, sendResetEmail } = require('../utils/sendMail');
 const { logUserActivity } = require('../utils/activityLogger');
 
-// Generate JWT token
+const { processReferral, completeReferral } = require('../controllers/referralController');
+
+
+// 🔹 Generate JWT token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d'
-  });
+  return jwt.sign(
+    { id },
+    process.env.JWT_SECRET || "secret123",
+    { expiresIn: '30d' }
+  );
 };
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
-const { processReferral, completeReferral } = require('../controllers/referralController');
+
+// ================= REGISTER =================
 
 const register = async (req, res) => {
   try {
     const { name, fatherName, email, phone, password, dob, gender, referralCode } = req.body;
 
-    // Validate input
     if (!name || !email || !phone || !password) {
       return res.status(400).json({ message: 'All required fields are required' });
     }
 
-    // Check if user exists
     const userExists = await User.findOne({ email: email.trim().toLowerCase() });
+
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Create user
     const user = await User.create({
       name: name.trim(),
       fatherName: fatherName ? fatherName.trim() : '',
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
       password,
-      dob: new Date(dob),
+      dob: dob ? new Date(dob) : null,
       gender
     });
 
-    // Create user details
     await UserDetails.create({
       user: user._id,
-      dateOfBirth: new Date(dob),
+      dateOfBirth: dob ? new Date(dob) : null,
       gender
     });
 
-    // Process referral if code provided
     if (referralCode) {
       await processReferral(referralCode, user._id);
     }
 
-    // Send welcome email
-    await sendWelcomeEmail(user);
+    try {
+      await sendWelcomeEmail(user);
+    } catch (mailError) {
+      console.error("Welcome email failed:", mailError.message);
+    }
 
-    // Log signup activity
-    await logUserActivity.signup(user, req);
+    try {
+      await logUserActivity.signup(user, req);
+    } catch {}
 
     res.status(201).json({
       _id: user._id,
@@ -77,62 +84,53 @@ const register = async (req, res) => {
       amount: 100,
       token: generateToken(user._id)
     });
+
   } catch (error) {
+    console.error("REGISTER ERROR:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+
+// ================= LOGIN =================
+
 const login = async (req, res) => {
   try {
+    console.log("LOGIN BODY:", req.body);
+
     const { email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
+      return res.status(400).json({ message: "Email and password are required" });
     }
 
-    // Find user
     const user = await User.findOne({ email: email.trim().toLowerCase() });
+
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: "User not found" });
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
+    if (!user.password) {
+      return res.status(500).json({ message: "User password missing in DB" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: "Invalid password" });
     }
 
-    // Update user login info
-    try {
-      user.loginCount += 1;
-      user.lastLogin = new Date();
-      updateUserTier(user);
-      await user.save();
-    } catch (updateError) {
-      console.error('Error updating user on login:', updateError.message);
-      // Continue without failing login
-    }
+    user.loginCount += 1;
+    user.lastLogin = new Date();
+    updateUserTier(user);
 
-    // Generate token
-    let token;
-    try {
-      token = generateToken(user._id);
-    } catch (tokenError) {
-      console.error('Error generating token:', tokenError.message);
-      return res.status(500).json({ message: 'Token generation failed. Please check server configuration.' });
-    }
+    await user.save();
 
-    // Log login activity (non-blocking)
     try {
       await logUserActivity.login(user, req);
-    } catch (logError) {
-      console.error('Error logging login activity:', logError.message);
-      // Continue without failing login
-    }
+    } catch {}
+
+    const token = generateToken(user._id);
 
     res.json({
       _id: user._id,
@@ -142,18 +140,18 @@ const login = async (req, res) => {
       totalCoins: user.totalCoins,
       tier: user.tier,
       isAdmin: user.isAdmin,
-      token: token,
-      rewardEarned: 0
+      token
     });
+
   } catch (error) {
-    console.error('Login error:', error.message);
-    res.status(500).json({ message: 'Internal server error during login' });
+    console.error("🔥 LOGIN CRASH:", error);
+    res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Get user profile
-// @route   GET /api/auth/profile
-// @access  Private
+
+// ================= PROFILE =================
+
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('-password');
@@ -163,14 +161,13 @@ const getProfile = async (req, res) => {
   }
 };
 
-// @desc    Forgot password
-// @route   POST /api/auth/forgot-password
-// @access  Public
+
+// ================= FORGOT PASSWORD =================
+
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    // Validate input
     if (!email) {
       return res.status(400).json({ message: 'Email is required' });
     }
@@ -181,30 +178,35 @@ const forgotPassword = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
-    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    user.resetPasswordToken = crypto.createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
 
     await user.save();
 
-    // Send reset email
     await sendResetEmail(user, resetToken);
 
     res.json({ message: 'Password reset email sent' });
+
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Reset password
-// @route   POST /api/auth/reset-password
-// @access  Public
+
+// ================= RESET PASSWORD =================
+
 const resetPassword = async (req, res) => {
   try {
     const { token, password } = req.body;
 
-    const resetPasswordToken = crypto.createHash('sha256').update(token).digest('hex');
+    const resetPasswordToken = crypto.createHash('sha256')
+      .update(token)
+      .digest('hex');
 
     const user = await User.findOne({
       resetPasswordToken,
@@ -221,140 +223,116 @@ const resetPassword = async (req, res) => {
 
     await user.save();
 
-    // Log password change activity
-    await logUserActivity.passwordChange(user, req);
+    try {
+      await logUserActivity.passwordChange(user, req);
+    } catch {}
 
     res.json({ message: 'Password reset successful' });
+
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Create payment order
-// @route   POST /api/auth/create-payment-order
-// @access  Private
+
+// ================= PAYMENT ORDER =================
+
 const createPaymentOrder = async (req, res) => {
   try {
     const { amount } = req.body;
-    console.log('Creating payment order for amount:', amount);
 
-    // Validate amount
     if (!amount || amount <= 0) {
-      console.log('Invalid amount:', amount);
       return res.status(400).json({ message: 'Invalid amount' });
     }
 
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(500).json({ message: 'Payment service not configured' });
+    }
+
     const user = await User.findById(req.user._id);
+
     if (!user) {
-      console.log('User not found for payment order');
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (user.paymentStatus === 'completed') {
-      console.log('Payment already completed for user:', user._id);
-      return res.status(400).json({ message: 'Payment already completed' });
-    }
-
-    const amountInPaise = Math.round(amount * 100); // Convert to paise and round
-    console.log('Amount in paise:', amountInPaise);
-
-    // Generate short receipt ID (max 40 chars)
-    const shortId = user._id.toString().slice(-8);
-    const timestamp = Date.now().toString().slice(-6);
-    const receipt = `rcpt_${shortId}_${timestamp}`;
-
     const options = {
-      amount: amountInPaise,
+      amount: Math.round(amount * 100),
       currency: 'INR',
-      receipt: receipt,
+      receipt: `rcpt_${Date.now()}`,
       payment_capture: 1
     };
 
-    console.log('Razorpay order options:', options);
-
-    // Check if Razorpay is properly configured
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.error('Razorpay keys not configured');
-      return res.status(500).json({ message: 'Payment service not configured. Please contact support.' });
-    }
-
     const order = await razorpay.orders.create(options);
-    console.log('Razorpay order created:', order.id);
 
     res.json({
       orderId: order.id,
       amount: order.amount,
       currency: order.currency
     });
+
   } catch (error) {
-    console.error('Error creating payment order:', error.message);
-    console.error('Full error:', error);
-    res.status(500).json({ message: 'Failed to create payment order. Please try again.' });
+    console.error("Payment order error:", error);
+    res.status(500).json({ message: 'Failed to create payment order' });
   }
 };
 
-// @desc    Verify payment
-// @route   POST /api/auth/verify-payment
-// @access  Private
-const Transaction = require('../models/Transaction');
+
+// ================= VERIFY PAYMENT =================
 
 const verifyPayment = async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
 
     const user = await User.findById(req.user._id);
+
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Verify signature
     const sign = razorpay_order_id + '|' + razorpay_payment_id;
-    const expectedSign = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(sign.toString())
+
+    const expectedSign = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(sign)
       .digest('hex');
 
-    if (razorpay_signature === expectedSign) {
-      user.paymentStatus = 'completed';
-      user.serviceActivated = true;
-
-      // Give coins based on payment amount
-      const coinsToAdd = Math.floor(amount / 10); // ₹100 = 10 coins, ₹1000 = 100 coins, ₹10000 = 1000 coins
-      user.totalCoins += coinsToAdd;
-      updateUserTier(user);
-      await user.save();
-
-      // Log the payment reward
-      await RewardLog.create({
-        user: user._id,
-        coinsEarned: coinsToAdd,
-        reason: 'Payment Reward',
-        tierAtTime: user.tier
-      });
-
-      // Create transaction record for payment
-      await Transaction.create({
-        user: user._id,
-        apiResponse: {
-          razorpay_order_id,
-          razorpay_payment_id,
-          razorpay_signature
-        },
-        status: 'SUCCESS',
-        amount: amount,
-        currency: 'INR'
-      });
-
-      // Complete referral if user was referred
-      await completeReferral(user._id);
-
-      res.json({ message: 'Payment verified successfully' });
-    } else {
-      res.status(400).json({ message: 'Payment verification failed' });
+    if (razorpay_signature !== expectedSign) {
+      return res.status(400).json({ message: 'Payment verification failed' });
     }
+
+    user.paymentStatus = 'completed';
+    user.serviceActivated = true;
+
+    const coinsToAdd = Math.floor(amount / 10);
+    user.totalCoins += coinsToAdd;
+
+    updateUserTier(user);
+    await user.save();
+
+    await RewardLog.create({
+      user: user._id,
+      coinsEarned: coinsToAdd,
+      reason: 'Payment Reward',
+      tierAtTime: user.tier
+    });
+
+    await Transaction.create({
+      user: user._id,
+      status: 'SUCCESS',
+      amount,
+      currency: 'INR'
+    });
+
+    await completeReferral(user._id);
+
+    res.json({ message: 'Payment verified successfully' });
+
   } catch (error) {
+    console.error("Verify payment error:", error);
     res.status(500).json({ message: error.message });
   }
 };
+
 
 module.exports = {
   register,
