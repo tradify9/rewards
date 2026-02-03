@@ -8,6 +8,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/register', upload.none(), register);
 router.post('/login', login);
+router.get('/login', (req, res) => {
+  res.status(405).json({ message: 'Method not allowed. Use POST for login.' });
+});
 router.get('/profile', protect, getProfile);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
