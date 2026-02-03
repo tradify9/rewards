@@ -117,6 +117,15 @@ const login = async (req, res) => {
       // Continue without failing login
     }
 
+    // Generate token
+    let token;
+    try {
+      token = generateToken(user._id);
+    } catch (tokenError) {
+      console.error('Error generating token:', tokenError.message);
+      return res.status(500).json({ message: 'Token generation failed. Please check server configuration.' });
+    }
+
     // Log login activity (non-blocking)
     try {
       await logUserActivity.login(user, req);
@@ -133,7 +142,7 @@ const login = async (req, res) => {
       totalCoins: user.totalCoins,
       tier: user.tier,
       isAdmin: user.isAdmin,
-      token: generateToken(user._id),
+      token: token,
       rewardEarned: 0
     });
   } catch (error) {
