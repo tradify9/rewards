@@ -87,16 +87,7 @@ const register = async (req, res) => {
 // @access  Public
 const login = async (req, res) => {
   try {
-    console.log('Request body:', req.body);
-    let parsedBody = req.body;
-    if (typeof parsedBody === 'string') {
-      try {
-        parsedBody = JSON.parse(parsedBody);
-      } catch (e) {
-        return res.status(400).json({ message: 'Invalid JSON syntax' });
-      }
-    }
-    const { email, password } = parsedBody;
+    const { email, password } = req.body;
 
     // Validate input
     if (!email || !password) {
@@ -115,30 +106,24 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Check if service is activated - allow login but redirect to payment
-    const needsPayment = !user.serviceActivated;
-
-    // Daily login rewards disabled temporarily
-    let rewardAmount = 0;
-
+    // Update user login info
     try {
       user.loginCount += 1;
       user.lastLogin = new Date();
-
-      // Update tier
       updateUserTier(user);
-
       await user.save();
-    } catch (rewardError) {
-      console.error('Login update failed:', rewardError.message);
-      // Still update login count and last login
-      user.loginCount += 1;
-      user.lastLogin = new Date();
-      await user.save();
+    } catch (updateError) {
+      console.error('Error updating user on login:', updateError.message);
+      // Continue without failing login
     }
 
-    // Log login activity
-    await logUserActivity.login(user, req);
+    // Log login activity (non-blocking)
+    try {
+      await logUserActivity.login(user, req);
+    } catch (logError) {
+      console.error('Error logging login activity:', logError.message);
+      // Continue without failing login
+    }
 
     res.json({
       _id: user._id,
@@ -149,10 +134,11 @@ const login = async (req, res) => {
       tier: user.tier,
       isAdmin: user.isAdmin,
       token: generateToken(user._id),
-      rewardEarned: rewardAmount
+      rewardEarned: 0
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Login error:', error.message);
+    res.status(500).json({ message: 'Internal server error during login' });
   }
 };
 
