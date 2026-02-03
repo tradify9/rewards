@@ -14,6 +14,7 @@ router.get('/login', (req, res) => {
 router.get('/profile', protect, getProfile);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
+router.put('/change-password', protect, changePassword);
 router.post('/create-payment-order', protect, createPaymentOrder);
 router.post('/verify-payment', protect, verifyPayment);
 

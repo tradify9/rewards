@@ -16,6 +16,8 @@ router.get('/analytics', protect, admin, getAnalytics);
 router.get('/dashboard-stats', protect, admin, getDashboardStats);
 router.get('/recent-activity', protect, admin, getRecentActivity);
 router.put('/users/:id', protect, admin, updateUser);
+router.put('/users/:id/change-password', protect, admin, changeUserPassword);
+router.put('/profile', protect, admin, updateAdminProfile);
 router.delete('/users/:id', protect, admin, deleteUser);
 
 // User Details routes

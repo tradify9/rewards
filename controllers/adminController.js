@@ -348,6 +348,89 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
+// @desc    Change user password (Admin only)
+// @route   PUT /api/admin/users/:id/change-password
+// @access  Private/Admin
+const changeUserPassword = async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update admin profile (Admin only)
+// @route   PUT /api/admin/profile
+// @access  Private/Admin
+const updateAdminProfile = async (req, res) => {
+  try {
+    const adminId = req.user._id;
+    const { name, email, uniqueId, currentPassword, newPassword } = req.body;
+
+    const admin = await User.findById(adminId);
+
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+
+    // If changing password, verify current password
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Current password is required to change password' });
+      }
+
+      const isMatch = await admin.comparePassword(currentPassword);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Current password is incorrect' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+      }
+
+      admin.password = newPassword;
+    }
+
+    // Update other fields
+    if (name) admin.name = name;
+    if (email) admin.email = email;
+    if (uniqueId) admin.uniqueId = uniqueId;
+
+    await admin.save();
+
+    // Return updated admin data (excluding password)
+    const adminResponse = admin.toObject();
+    delete adminResponse.password;
+
+    res.json({
+      message: 'Profile updated successfully',
+      admin: adminResponse
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      // Duplicate key error
+      const field = Object.keys(error.keyValue)[0];
+      return res.status(400).json({ message: `${field} already exists` });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Get recent activity
 // @route   GET /api/admin/recent-activity
 // @access  Private/Admin
@@ -395,5 +478,7 @@ module.exports = {
   activateUserAccount,
   sendCoinCertificate,
   getDashboardStats,
-  getRecentActivity
+  getRecentActivity,
+  changeUserPassword,
+  updateAdminProfile
 };
