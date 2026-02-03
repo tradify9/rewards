@@ -22,7 +22,7 @@ const connectDB = async () => {
     if (!process.env.MONGO_URI) {
       throw new Error("MONGO_URI missing in .env");
     }
-    
+
     const uri = process.env.MONGO_URI.trim();
 
     console.log("CLEAN URI:", JSON.stringify(uri));
@@ -46,16 +46,20 @@ const connectDB = async () => {
 const app = express();
 
 /* -------------------------------
+   ✅ GLOBAL CORS (ALLOW ALL *)
+-------------------------------- */
+app.use(cors({
+  origin: "*",
+  methods: "*",
+  allowedHeaders: "*"
+}));
+
+// Handle preflight manually
+app.options("*", cors());
+
+/* -------------------------------
    Middleware
 -------------------------------- */
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
@@ -68,7 +72,7 @@ app.get("/", (req, res) => {
 });
 
 /* -------------------------------
-   API ROUTES (ALL INCLUDED)
+   API ROUTES
 -------------------------------- */
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
