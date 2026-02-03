@@ -10,7 +10,8 @@ const connectDB = async () => {
     mongoose.set('strictQuery', true);
 
     const conn = await mongoose.connect(process.env.MONGO_URI, {
-      serverSelectionTimeoutMS: 10000, // 10 sec timeout
+      serverSelectionTimeoutMS: 30000, // 30 sec timeout
+      socketTimeoutMS: 45000, // 45 sec socket timeout
     });
 
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
