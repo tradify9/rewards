@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { register, login, getProfile, forgotPassword, resetPassword, createPaymentOrder, verifyPayment } = require('../controllers/authController');
+const { register, login, getProfile, forgotPassword, resetPassword, changePassword, createPaymentOrder, verifyPayment } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 // Multer setup for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
