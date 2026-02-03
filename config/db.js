@@ -7,13 +7,17 @@ const connectDB = async () => {
       return;
     }
 
+    mongoose.set('strictQuery', true);
+
     const conn = await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000, // 10 sec timeout
     });
+
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error.message);
+    console.error('❌ MongoDB connection failed');
+    console.error('Reason:', error.message);
+    console.error('Error Name:', error.name);
     console.log('⚠️  Continuing without database connection for testing...');
   }
 };

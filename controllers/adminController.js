@@ -198,6 +198,64 @@ const createUser = async (req, res) => {
   }
 };
 
+// @desc    Activate user account (Admin only)
+// @route   POST /api/admin/users/:id/activate
+// @access  Private/Admin
+const activateUserAccount = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update user status
+    user.paymentStatus = 'completed';
+    user.serviceActivated = true;
+
+    // Add coins based on payment amount (assuming ₹100 for 10 coins)
+    const coinsToAdd = 10;
+    user.totalCoins += coinsToAdd;
+
+    // Update tier
+    user.updateTier();
+
+    await user.save();
+
+    // Create reward log
+    const rewardLog = new RewardLog({
+      user: user._id,
+      coinsEarned: coinsToAdd,
+      reason: 'Account Activation',
+      description: 'Account activated by admin'
+    });
+    await rewardLog.save();
+
+    // Send activation email
+    try {
+      await sendUserCredentialsEmail(user, 'Account Activated');
+    } catch (emailError) {
+      console.error('Failed to send activation email:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    res.json({
+      message: 'User account activated successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        paymentStatus: user.paymentStatus,
+        serviceActivated: user.serviceActivated,
+        totalCoins: user.totalCoins,
+        tier: user.tier
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Send coin certificate to user (Admin only)
 // @route   POST /api/admin/users/:id/send-certificate
 // @access  Private/Admin
@@ -334,6 +392,7 @@ module.exports = {
   updateUser,
   deleteUser,
   createUser,
+  activateUserAccount,
   sendCoinCertificate,
   getDashboardStats,
   getRecentActivity
