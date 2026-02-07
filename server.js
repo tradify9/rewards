@@ -400,7 +400,7 @@ app.use((err, req, res, next) => {
 /* -------------------------------
    Start AFTER DB connect
 -------------------------------- */
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5002;
 
 connectDB().then(() => {
   app.listen(PORT, () => {
